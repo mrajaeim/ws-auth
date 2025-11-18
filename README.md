@@ -4,7 +4,7 @@ A small multi-service playground featuring parallel implementations in **Node.js
 
 - **Auth HTTP API**: Issues JWT tokens inside `HttpOnly` cookies  
   (Node: `main.js` / Python: `auth_service.py`)
-- **WebSocket microservice**: Validates the cookie before allowing a WebSocket connection  
+- **WebSocket microservice**: Validates the `auth_token` cookie before allowing a WebSocket connection  
   (Node: `ws-microservice.js` / Python: `ws_microservice.py`)
 - **Static client server**: Serves the demo frontend  
   (Node: `server.js` / Python: `static_server.py`)
@@ -24,11 +24,22 @@ Use either stack depending on your preference or deployment target.
 
 ## Installation
 
-| Step             | Node.js                          | Python                                                                 |
-|------------------|----------------------------------|------------------------------------------------------------------------|
-| Install deps     | `npm install`                    | ```bash<br>python -m venv .venv<br>.venv\Scripts\activate  # Windows<br># source .venv/bin/activate  # macOS/Linux<br>pip install -r requirements.txt<br>``` |
+### Node.js
 
-> 💡 **Note:** On macOS/Linux, replace `.venv\Scripts\activate` with `source .venv/bin/activate`.
+```bash
+npm install
+```
+
+### Python
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate    # Windows
+# source .venv/bin/activate  # macOS/Linux
+pip install -r requirements.txt
+```
+
+> 💡 **Note:** On macOS/Linux, use `source .venv/bin/activate` instead of `.venv\Scripts\activate`.
 
 ---
 
@@ -46,7 +57,7 @@ Run each service from the project root in its own terminal (or as a background p
 > - **Python**: `AUTH_PORT`, `WS_PORT`, `FRONT_PORT`  
 > - **Node.js**: Edit the constants at the top of the respective files  
 >  
-> The Python WebSocket service also honors `AUTH_SERVICE_URL` to connect to a remote auth service.
+> The Python WebSocket service also honors `AUTH_SERVICE_URL` to connect to a remote auth instance.
 
 ---
 
@@ -62,9 +73,9 @@ Run each service from the project root in its own terminal (or as a background p
 ## Useful Notes
 
 - Adjust `JWT_SECRET`, demo users, or allowed origins in the respective Auth service implementation.
-- Ensure the WebSocket service can reach the Auth Service (update `AUTH_SERVICE_URL` if hosting separately).
+- Ensure the WebSocket service can reach the Auth Service — update `AUTH_SERVICE_URL` if hosting services separately.
 - For production:
   - Enable HTTPS
-  - Set `Secure` flag on cookies
+  - Set the `Secure` flag on cookies
   - Move secrets to environment variables
   - Replace the in-memory user store with persistent storage (e.g., database)
