@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WS HttpOnly Cookie Auth Client</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9;
+        }
+    </style>
+</head>
+<body class="p-8 h-screen flex flex-col items-center justify-center">
+
+    <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-lg">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">Microservice WS Authentication Demo</h1>
+        
+        <!-- Status & Messages -->
+        <div id="status" class="mb-4 p-3 rounded-lg text-sm font-medium transition-all duration-300 bg-gray-100 text-gray-700">
+            Current Status: Disconnected. Please Log In.
+        </div>
+        
+        <!-- Login Form (POSTs to Auth Service) -->
+        <div id="login-section" class="space-y-4">
+            <h2 class="text-xl font-semibold text-gray-700">1. Log In to Set Cookie</h2>
+            <p class="text-sm text-gray-500">Use <code>user1</code> / <code>password123</code>. The Auth service will set an HttpOnly cookie.</p>
+            <input type="text" id="username" placeholder="Username (user1)" value="user1" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+            <input type="password" id="password" placeholder="Password (password123)" value="password123" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+            <button id="login-btn" onclick="handleLogin()" class="w-full bg-indigo-600 text-white p-3 rounded-lg font-semibold hover:bg-indigo-700 transition duration-150 shadow-md">
+                Log In & Set Cookie
+            </button>
+        </div>
+
+        <!-- WS Connection Section -->
+        <div id="ws-section" class="mt-8 space-y-4 pt-4 border-t border-gray-200">
+            <h2 class="text-xl font-semibold text-gray-700">2. Connect to WS Microservice</h2>
+            <p class="text-sm text-gray-500">The browser sends the HttpOnly cookie automatically in the WS handshake to `ws://localhost:3001`.</p>
+            <button id="connect-btn" onclick="handleConnect()" class="w-full bg-green-500 text-white p-3 rounded-lg font-semibold hover:bg-green-600 transition duration-150 shadow-md" disabled>
+                Connect WebSocket
+            </button>
+            <button id="request-data-btn" onclick="requestData()" class="w-full bg-blue-500 text-white p-3 rounded-lg font-semibold hover:bg-blue-600 transition duration-150 shadow-md" disabled>
+                Request User Data (via WS)
+            </button>
+        </div>
+
+        <!-- WS Output -->
+        <div class="mt-8 pt-4 border-t border-gray-200">
+            <h2 class="text-xl font-semibold text-gray-700 mb-3">WS Messages</h2>
+            <div id="messages" class="h-40 overflow-y-scroll p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm space-y-1">
+                <p class="text-gray-500">Messages will appear here...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const AUTH_URL = 'http://localhost:3000/login';
+        const WS_URL = 'ws://localhost:3001';
+        let ws = null;
+
+        const statusEl = document.getElementById('status');
+        const connectBtn = document.getElementById('connect-btn');
+        const loginBtn = document.getElementById('login-btn');
+        const requestDataBtn = document.getElementById('request-data-btn');
+        const messagesEl = document.getElementById('messages');
+
+        // Helper to update status
+        function updateStatus(message, type = 'info') {
+            statusEl.textContent = `Current Status: ${message}`;
+            statusEl.className = statusEl.className.split(' ').filter(c => !c.startsWith('bg-') && !c.startsWith('text-')).join(' ');
+            if (type === 'success') {
+                statusEl.classList.add('bg-green-100', 'text-green-800');
+            } else if (type === 'error') {
+                statusEl.classList.add('bg-red-100', 'text-red-800');
+            } else {
+                statusEl.classList.add('bg-gray-100', 'text-gray-700');
+            }
+        }
+
+        // Helper to log WS messages
+        function logMessage(content, source = 'Server') {
+            const p = document.createElement('p');
+            p.innerHTML = `<span class="font-bold text-indigo-700">[${source}]</span> ${content}`;
+            messagesEl.appendChild(p);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        // 1. Handle Login (Sets the HttpOnly cookie)
+        async function handleLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Logging In...';
+
+            try {
+                // Fetch request sends credentials (no cookie yet) and receives the Set-Cookie header.
+                const response = await fetch(AUTH_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: "include",
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (response.ok) {
+                    updateStatus('Login successful. HttpOnly Cookie is now set!', 'success');
+                    connectBtn.disabled = false;
+                } else {
+                    const data = await response.json();
+                    updateStatus(`Login failed: ${data.message}`, 'error');
+                }
+            } catch (error) {
+                updateStatus(`Network Error: Cannot connect to Auth Service.`, 'error');
+                console.error('Login error:', error);
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Log In & Set Cookie';
+            }
+        }
+
+        // 2. Handle WS Connection (Browser sends the HttpOnly cookie automatically)
+        function handleConnect() {
+            if (ws) {
+                ws.close();
+            }
+
+            connectBtn.disabled = true;
+            connectBtn.textContent = 'Connecting...';
+            updateStatus('Attempting to connect WebSocket. Cookie will be sent in handshake...');
+            messagesEl.innerHTML = ''; // Clear old messages
+
+            try {
+                ws = new WebSocket(WS_URL);
+
+                ws.onopen = () => {
+                    updateStatus('WebSocket Connected and Authenticated!', 'success');
+                    connectBtn.textContent = 'Connected (Click to Disconnect)';
+                    connectBtn.disabled = false;
+                    requestDataBtn.disabled = false;
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'AUTH_SUCCESS') {
+                            logMessage(`Authenticated as User ID: ${data.userId}`, 'System');
+                        } else if (data.type === 'DATA_RESPONSE') {
+                            logMessage(`Received private data: <span class="text-blue-600">${data.data}</span>`, 'Data');
+                        } else {
+                            logMessage(data.message || event.data);
+                        }
+                    } catch (e) {
+                        logMessage(`Raw: ${event.data}`);
+                    }
+                };
+
+                ws.onclose = (event) => {
+                    updateStatus(`Disconnected. Code: ${event.code}. Auth failed or server closed.`, 'error');
+                    connectBtn.textContent = 'Connect WebSocket';
+                    connectBtn.disabled = false;
+                    requestDataBtn.disabled = true;
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket Error:', error);
+                    updateStatus('WebSocket connection error. Check server logs.', 'error');
+                };
+            } catch (error) {
+                updateStatus(`Failed to create WebSocket. Check URL/Port.`, 'error');
+                console.error('WS initialization error:', error);
+                connectBtn.disabled = false;
+                connectBtn.textContent = 'Connect WebSocket';
+            }
+        }
+
+        // 3. Request user-specific data over the established WS
+        function requestData() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = {
+                    type: 'DATA_REQUEST',
+                    content: 'Give me my user-specific data.'
+                };
+                ws.send(JSON.stringify(message));
+                logMessage('Requesting data from microservice...', 'Client');
+            } else {
+                updateStatus('WebSocket is not open. Please connect first.', 'error');
+            }
+        }
+    </script>
+</body>
+</html>
